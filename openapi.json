@@ -22,7 +22,7 @@
    "post": {
     "operationId": "checkPicks",
     "security": [],
-    "summary": "Check a picks document, free",
+    "summary": "Check a picks document before a replay",
     "description": "Says whether a full run would take the document and whether its first pick fits the free sample. It does not look at the chain.",
     "requestBody": {
      "required": true,
@@ -88,7 +88,7 @@
    "post": {
     "operationId": "replayFirstPick",
     "security": [],
-    "summary": "Replay the first pick of a document, free",
+    "summary": "Generate a replay of the first pick of a document",
     "description": "The free sample: the first pick of a valid document is replayed and the rest is left out, up to 6 times an hour for a caller, with an exit window of up to 15 minutes.",
     "requestBody": {
      "required": true,
@@ -189,7 +189,7 @@
   "/v1/replay": {
    "post": {
     "operationId": "replayPicks",
-    "summary": "Replay up to 50 picks, paid",
+    "summary": "Generate a replay of up to 50 picks",
     "description": "Replays every pick of the document. The price is 1 USDC for a run, paid over x402 with USDC on Solana mainnet, and a run is charged when at least one pick could be priced at its entry. A request without a payment is answered with status 402 and the terms.",
     "x-payment-info": {
      "protocols": [
@@ -316,7 +316,7 @@
    "post": {
     "operationId": "fetchPaidAnswers",
     "security": [],
-    "summary": "Fetch the stored answers of a paying wallet, free",
+    "summary": "Fetch the stored answers of a paying wallet",
     "description": "For a buyer whose answer did not arrive. Sign the line \"replay results payer=YOUR_ADDRESS date=YYYY-MM-DD\", where the date is the day in UTC, with the wallet that paid, and send its address and the signature in base58. Answers are kept for 7 days.",
     "requestBody": {
      "required": true,
@@ -331,10 +331,12 @@
         "additionalProperties": false,
         "properties": {
          "payer": {
-          "type": "string"
+          "type": "string",
+          "description": "The Solana address of the wallet that paid, in base58."
          },
          "signature": {
-          "type": "string"
+          "type": "string",
+          "description": "That wallet's signature of the line \"replay results payer=ADDRESS date=YYYY-MM-DD\", in base58."
          }
         }
        }
@@ -379,7 +381,7 @@
    "get": {
     "operationId": "getExample",
     "security": [],
-    "summary": "Three real moments with their replay",
+    "summary": "Fetch three real moments with their replay",
     "description": "A picks document made from three real buys of a real bot, with the full answer it produces.",
     "responses": {
      "200": {
@@ -599,8 +601,7 @@
      "results": {
       "type": "array",
       "items": {
-       "type": "object",
-       "description": "One pick: the buy, the sale, the result in SOL and the paper trade beside it."
+       "$ref": "#/components/schemas/ReplayResult"
       }
      },
      "explanation": {
@@ -610,6 +611,214 @@
      "data": {
       "type": "object",
       "description": "How much of the chain's history the run read."
+     }
+    }
+   },
+   "ReplayResult": {
+    "type": "object",
+    "description": "One replayed pick. The fields id, mint, stake_lamports and status are always present. The fields buy, decision_price and landing_price are present when the pick could be priced at its entry, the field sell when a sale was priced, and tokens_held says what was still held at the end.",
+    "required": [
+     "id",
+     "mint",
+     "status"
+    ],
+    "properties": {
+     "id": {
+      "type": "string",
+      "description": "The name the document gave the pick."
+     },
+     "mint": {
+      "type": "string",
+      "description": "The coin's mint address."
+     },
+     "stake_lamports": {
+      "type": "integer",
+      "description": "What the pick put in, in lamports."
+     },
+     "status": {
+      "type": "string",
+      "description": "The outcome in one word. sold means the pick was bought and sold. Words such as before_creation, before_first_trade, no_mint_history and non_sol_quote mean that the pick could not be priced at its entry. Other words say that the buy failed or that tokens were still held at the end, and the explanation says which."
+     },
+     "decision": {
+      "type": "object",
+      "description": "A place in the chain's order of events.",
+      "properties": {
+       "slot": {
+        "type": "integer"
+       },
+       "after_index": {
+        "description": "The position in the slot, or the word last."
+       },
+       "unix_ms": {
+        "type": "integer"
+       }
+      }
+     },
+     "entry_landing": {
+      "type": "object",
+      "description": "A place in the chain's order of events.",
+      "properties": {
+       "slot": {
+        "type": "integer"
+       },
+       "after_index": {
+        "description": "The position in the slot, or the word last."
+       },
+       "unix_ms": {
+        "type": "integer"
+       }
+      }
+     },
+     "exit_decision": {
+      "type": "object",
+      "description": "A place in the chain's order of events.",
+      "properties": {
+       "slot": {
+        "type": "integer"
+       },
+       "after_index": {
+        "description": "The position in the slot, or the word last."
+       },
+       "unix_ms": {
+        "type": "integer"
+       }
+      }
+     },
+     "exit_landing": {
+      "type": "object",
+      "description": "A place in the chain's order of events.",
+      "properties": {
+       "slot": {
+        "type": "integer"
+       },
+       "after_index": {
+        "description": "The position in the slot, or the word last."
+       },
+       "unix_ms": {
+        "type": "integer"
+       }
+      }
+     },
+     "decision_price": {
+      "type": "string",
+      "description": "The last traded price at the moment the bot decided, in SOL for one token unit, as a decimal string."
+     },
+     "landing_price": {
+      "type": "string",
+      "description": "The price when the buy landed, before the bot's own order, in SOL for one token unit, as a decimal string."
+     },
+     "buy": {
+      "$ref": "#/components/schemas/Fill"
+     },
+     "sell": {
+      "$ref": "#/components/schemas/Fill"
+     },
+     "exit_reason": {
+      "type": "string",
+      "description": "Why the bot sold: take_profit, stop_loss, timeout or time."
+     },
+     "tokens_held": {
+      "type": "integer",
+      "description": "Token units still held at the end, which is 0 after a sale."
+     },
+     "cash_lamports": {
+      "type": "integer",
+      "description": "The pick's whole result in lamports, with every fee."
+     },
+     "net_sol": {
+      "type": "string",
+      "description": "The same result in SOL, as a decimal string."
+     },
+     "stake_share": {
+      "type": "string",
+      "description": "The result as a share of the stake, as a decimal string."
+     },
+     "paper": {
+      "type": "object",
+      "description": "The simplest paper trade of the same pick, which fills at the last traded price with no delay and no fees.",
+      "properties": {
+       "status": {
+        "type": "string"
+       },
+       "entry_price": {
+        "type": "string",
+        "description": "The paper entry price, in SOL for one token unit, as a decimal string."
+       },
+       "exit_price": {
+        "type": "string",
+        "description": "The paper exit price, in SOL for one token unit, as a decimal string."
+       },
+       "net_sol": {
+        "type": "string",
+        "description": "The paper result in SOL."
+       },
+       "stake_share": {
+        "type": "string",
+        "description": "The paper result as a share of the stake."
+       }
+      }
+     },
+     "honest_minus_paper_sol": {
+      "type": "string",
+      "description": "The replayed result minus the paper result, in SOL."
+     },
+     "history_note": {
+      "type": "string",
+      "description": "A sentence about the history that was available for this pick."
+     }
+    }
+   },
+   "Fill": {
+    "type": "object",
+    "description": "One order of the bot as the replay priced it. A buy and a sale carry the same fields.",
+    "properties": {
+     "status": {
+      "type": "string",
+      "description": "The word filled when the order would have gone through, and otherwise the reason it would have failed, for example its own limit or the gap between a full curve and its pool (migration_gap)."
+     },
+     "venue": {
+      "type": "string",
+      "enum": [
+       "curve",
+       "pool"
+      ],
+      "description": "Where the order was priced: the bonding curve or the coin's pool."
+     },
+     "tokens": {
+      "type": "integer",
+      "description": "Token units bought or sold."
+     },
+     "curve": {
+      "type": "integer",
+      "description": "What went into the curve or pool for a buy, or came out of it for a sale, before trading fees, in lamports."
+     },
+     "protocol_fee": {
+      "type": "integer",
+      "description": "The protocol's fee, in lamports."
+     },
+     "creator_fee": {
+      "type": "integer",
+      "description": "The creator's fee, in lamports."
+     },
+     "base_fee": {
+      "type": "integer",
+      "description": "The network fee of the transaction, in lamports."
+     },
+     "priority_fee": {
+      "type": "integer",
+      "description": "The priority fee, in lamports."
+     },
+     "tip": {
+      "type": "integer",
+      "description": "The tip, in lamports."
+     },
+     "cash_lamports": {
+      "type": "integer",
+      "description": "What the order did to the bot's SOL, negative for a buy and positive for a sale, in lamports."
+     },
+     "price_after": {
+      "type": "string",
+      "description": "The price after the order, in SOL for one token unit, as a decimal string."
      }
     }
    },
