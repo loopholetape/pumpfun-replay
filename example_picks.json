@@ -1,0 +1,58 @@
+{
+ "settings": {
+  "delay_ms": 800,
+  "placement": "last",
+  "priority_fee": 12000,
+  "tip": 10000
+ },
+ "picks": [
+  {
+   "id": "moment-1",
+   "mint": "3ZDCDZeoX2yzRXdGJVtvRwhQCj1FGZCVuwuW1k6mpump",
+   "decision": {
+    "slot": 472217607,
+    "index": 158
+   },
+   "stake_lamports": 100000000,
+   "slippage_bps": 1500,
+   "exit": {
+    "type": "threshold",
+    "up_bps": 3000,
+    "down_bps": 2000,
+    "max_seconds": 60
+   }
+  },
+  {
+   "id": "moment-2",
+   "mint": "DoVYMEP3CZFbG5FeJ5J8ZoHVBfBAQukVAb6kyRx3pump",
+   "decision": {
+    "slot": 472328876,
+    "index": 21
+   },
+   "stake_lamports": 100000000,
+   "slippage_bps": 1500,
+   "exit": {
+    "type": "threshold",
+    "up_bps": 3000,
+    "down_bps": 2000,
+    "max_seconds": 60
+   }
+  },
+  {
+   "id": "moment-3",
+   "mint": "GTQuegzZpTdRPBoWukJR456hHvvbvG5uT6Mt96QSpump",
+   "decision": {
+    "slot": 472487439,
+    "index": 33
+   },
+   "stake_lamports": 100000000,
+   "slippage_bps": 1500,
+   "exit": {
+    "type": "threshold",
+    "up_bps": 3000,
+    "down_bps": 2000,
+    "max_seconds": 60
+   }
+  }
+ ]
+}
