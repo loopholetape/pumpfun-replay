@@ -20,6 +20,8 @@ with any script that asks for one, and use a wallet that holds little.
 It needs Python 3.9 or newer and one package: pip install solders
 """
 import argparse
+from decimal import Decimal, InvalidOperation
+from pathlib import Path
 import base64
 import json
 import os
@@ -36,10 +38,25 @@ SOLANA_MAINNET = 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp'
 RPC = 'https://api.mainnet-beta.solana.com'
 
 
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def spending_limit(value):
+    try:
+        amount = Decimal(value)
+        if amount.is_finite() and amount >= 0:
+            return amount
+    except InvalidOperation:
+        pass
+    raise argparse.ArgumentTypeError("Give a finite spending limit of zero or more USDC.")
+
+
 def post(url, body, headers=None, timeout=120):
     req = urllib.request.Request(url, data=body, headers=dict({'Content-Type': 'application/json', 'User-Agent': 'replay-client/0.1'}, **(headers or {})))
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with urllib.request.build_opener(NoRedirect()).open(req, timeout=timeout) as r:
             return r.status, dict(r.headers), r.read()
     except urllib.error.HTTPError as e:
         return e.code, dict(e.headers), e.read()
@@ -51,14 +68,15 @@ def header(headers, name):
 
 def said(raw):
     try:
-        return json.loads(raw)
+        doc = json.loads(raw)
+        return doc if isinstance(doc, dict) else {}
     except ValueError:
         return {}
 
 
 def keypair(path):
     from solders.keypair import Keypair
-    return Keypair.from_bytes(bytes(json.load(open(os.path.expanduser(path)))))
+    return Keypair.from_bytes(bytes(json.loads(Path(path).expanduser().read_bytes())))
 
 
 def recent_blockhash(rpc):
@@ -121,7 +139,7 @@ def main():
     ap.add_argument('command', choices=['check', 'sample', 'buy', 'results'])
     ap.add_argument('picks', nargs='?', help='the picks document, a JSON file')
     ap.add_argument('--keypair', help='the wallet that pays: a Solana keypair file (a JSON list of 64 numbers)')
-    ap.add_argument('--max-usdc', type=float, default=1.0, help='never sign a payment above this (default 1)')
+    ap.add_argument('--max-usdc', type=spending_limit, default=Decimal(1), help='never sign a payment above this (default 1)')
     ap.add_argument('--service', default=SERVICE)
     ap.add_argument('--pay-to', default=PAY_TO, help='the only address a payment may go to')
     ap.add_argument('--rpc', default=RPC, help='a Solana RPC node, asked for a recent blockhash and nothing else')
@@ -134,26 +152,43 @@ def main():
             sys.exit('results needs --keypair, the wallet that paid.')
         kp = keypair(a.keypair)
         line = 'replay results payer=%s date=%s' % (kp.pubkey(), time.strftime('%Y-%m-%d', time.gmtime()))
-        st, _, raw = post(base + 'v1/replay/results', json.dumps({'payer': str(kp.pubkey()), 'signature': str(kp.sign_message(line.encode()))}).encode())
-        out = said(raw)
-        print('status %d: %s' % (st, out.get('message')))
-        for i, run in enumerate(out.get('runs') or []):
-            print('run %d, paid with transaction %s' % (i + 1, run.get('transaction')))
-            show(run.get('answer') or {})
+        query = {'payer': str(kp.pubkey()), 'signature': str(kp.sign_message(line.encode()))}
+        runs = []
+        pending = needs_review = 0
+        while True:
+            st, _, raw = post(base + 'v1/replay/results', json.dumps(query).encode())
+            out = said(raw)
+            print(out.get('message') or 'The wallet did not receive a readable answer.')
+            if st != 200 or out.get('ok') is not True:
+                sys.exit(1)
+            pending += out.get('pending', 0)
+            needs_review += out.get('needs_review', 0)
+            for run in out.get('runs') or []:
+                print('This run was paid with transaction %s.' % run.get('transaction'))
+                show(run.get('answer') or {})
+                runs.append(run)
+            if not out.get('next_cursor'):
+                break
+            query['cursor'] = out['next_cursor']
+        out.update(runs=runs, pending=pending, needs_review=needs_review)
+        if pending or needs_review:
+            out['message'] = 'Some orders still need a check, so review the counts before paying again.'
         if a.out:
-            json.dump(out, open(a.out, 'w'), indent=1)
+            Path(a.out).write_text(json.dumps(out, indent=1))
         return
 
     if not a.picks:
         sys.exit('%s needs a picks document.' % a.command)
-    body = open(a.picks, 'rb').read()
+    body = Path(a.picks).read_bytes()
     if a.command in ('check', 'sample'):
         st, _, raw = post(base + ('v1/check' if a.command == 'check' else 'v1/replay/first'), body)
         out = said(raw)
         print('status %d' % st)
         show(out)
         if a.out:
-            json.dump(out, open(a.out, 'w'), indent=1)
+            Path(a.out).write_text(json.dumps(out, indent=1))
+        if st != 200 or not out:
+            sys.exit(1)
         return
 
     if not a.keypair:
@@ -163,12 +198,14 @@ def main():
     if st != 402:
         print('The service did not ask for a payment (status %d), so nothing was signed.' % st)
         show(said(raw))
-        return
+        sys.exit(1)
     terms = json.loads(base64.b64decode(header(headers, 'payment-required')))
     accept = next((x for x in terms.get('accepts', []) if x.get('scheme') == 'exact' and x.get('network') == SOLANA_MAINNET and x.get('asset') == USDC), None)
     if accept is None:
         sys.exit('The terms offer no plain USDC payment on Solana, so nothing was signed.')
-    price = int(accept['amount']) / 1e6
+    if not isinstance(accept.get('amount'), str) or not accept['amount'].isascii() or not accept['amount'].isdigit() or not 0 < int(accept['amount']) < 2**64:
+        sys.exit('The offer needs a positive whole amount in the smallest units of USDC.')
+    price = Decimal(accept['amount']) / Decimal(1_000_000)
     print('The service asks for %.2f USDC, paid to %s.' % (price, accept['payTo']))
     if accept['payTo'] != a.pay_to:
         sys.exit('That is not the address this client pays (%s), so nothing was signed.' % a.pay_to)
@@ -176,12 +213,20 @@ def main():
         sys.exit('That is more than --max-usdc allows (%.2f), so nothing was signed.' % a.max_usdc)
     kp = keypair(a.keypair)
     signature = signed_payment(kp, terms, accept, recent_blockhash(a.rpc))
-    st, headers, raw = post(url, body, {'PAYMENT-SIGNATURE': signature})
+    recovery = 'Check the transfer in your wallet and run results with the same keypair before paying again.'
+    try:
+        st, headers, raw = post(url, body, {'PAYMENT-SIGNATURE': signature})
+    except (OSError, TimeoutError):
+        print('The signed request did not receive a reply. ' + recovery)
+        sys.exit(1)
     out = said(raw)
     receipt = header(headers, 'payment-response')
-    receipt = json.loads(base64.b64decode(receipt)) if receipt else {}
+    try:
+        receipt = json.loads(base64.b64decode(receipt)) if receipt else {}
+    except (ValueError, TypeError):
+        receipt = {}
     print('status %d' % st)
-    if receipt.get('success'):
+    if isinstance(receipt, dict) and receipt.get('success'):
         print('The payment settled in transaction %s.' % receipt.get('transaction'))
     if st == 200:
         show(out)
@@ -189,9 +234,11 @@ def main():
         print('The payment was not confirmed to this client. If the transfer left your wallet all the same, the answer is kept: wait a minute and run "results" with the same keypair.')
     else:
         show(out)
-        print('Nothing was charged for this request.')
+        print(recovery)
     if a.out and out:
-        json.dump(out, open(a.out, 'w'), indent=1)
+        Path(a.out).write_text(json.dumps(out, indent=1))
+    if st != 200 or not isinstance(out.get('results'), list):
+        sys.exit(1)
 
 
 if __name__ == '__main__':

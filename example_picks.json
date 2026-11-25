@@ -8,10 +8,10 @@
  "picks": [
   {
    "id": "moment-1",
-   "mint": "3ZDCDZeoX2yzRXdGJVtvRwhQCj1FGZCVuwuW1k6mpump",
+   "mint": "BuKEom3vgDLJgyVs97jvD4Du6zTKLmxe7Q5mhJcQpump",
    "decision": {
-    "slot": 472217607,
-    "index": 158
+    "slot": 472522196,
+    "index": 137
    },
    "stake_lamports": 100000000,
    "slippage_bps": 1500,
@@ -24,10 +24,10 @@
   },
   {
    "id": "moment-2",
-   "mint": "DoVYMEP3CZFbG5FeJ5J8ZoHVBfBAQukVAb6kyRx3pump",
+   "mint": "eXraP5vec1Lspsm1uoXJeD3vK1E3cM6iJz9CkqQpump",
    "decision": {
-    "slot": 472328876,
-    "index": 21
+    "slot": 472524902,
+    "index": 44
    },
    "stake_lamports": 100000000,
    "slippage_bps": 1500,
@@ -40,10 +40,10 @@
   },
   {
    "id": "moment-3",
-   "mint": "GTQuegzZpTdRPBoWukJR456hHvvbvG5uT6Mt96QSpump",
+   "mint": "4mNUKfAz28nwvnRUwJZdi77t8HQeDZjF8o646cskpump",
    "decision": {
-    "slot": 472487439,
-    "index": 33
+    "slot": 472529678,
+    "index": 110
    },
    "stake_lamports": 100000000,
    "slippage_bps": 1500,

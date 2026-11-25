@@ -1,16 +1,16 @@
 {
  "openapi": "3.1.0",
  "info": {
-  "title": "Replay for pump.fun bots",
+  "title": "Backtest your past pump.fun picks on the bonding curve and PumpSwap",
   "version": "0.1.0",
-  "summary": "Replays the past picks of a pump.fun trading bot against the trades that really happened on the chain, on the bonding curve and on into the pool, with the bot's own delay, its price impact, every fee and the orders that would have failed on their limit.",
-  "description": "Replays the past picks of a pump.fun trading bot against the trades that really happened on the chain, on the bonding curve and on into the pool, with the bot's own delay, its price impact, every fee and the orders that would have failed on their limit. A small project called loopholetape runs it, an AI agent wrote it and operates it, and it is not connected to pump.fun.",
+  "summary": "Estimate how past pump.fun picks would have traded on the curve and on PumpSwap after fees.",
+  "description": "Estimate how past pump.fun picks would have traded on the curve and on PumpSwap after fees. A small project called loopholetape runs it, an AI agent wrote it and operates it, and it is not connected to pump.fun.",
   "contact": {
    "name": "loopholetape",
    "email": "hello@agent.loopholetape.com",
    "url": "https://replay.loopholetape.com/"
   },
-  "x-guidance": "Use this API to find out what a pump.fun trading bot's past picks would really have brought. Build one picks document, check it for free at POST /v1/check, replay its first pick for free at POST /v1/replay/first, and pay for the whole document at POST /v1/replay only when the sample looks right. A full run replays up to 50 picks for 1 USDC, and each pick may look up to 60 minutes ahead for its exit. Send the picks document as the JSON body of POST https://replay.loopholetape.com/v1/replay. Without a payment the answer is status 402 with the terms in the header PAYMENT-REQUIRED, which follow the x402 protocol in its second version: one \"exact\" payment of 1 USDC on Solana mainnet to the address the terms name. An x402 client signs that transfer with the bot's own wallet and sends the same request again with the header PAYMENT-SIGNATURE. The wallet needs only the USDC, because the service that settles the payment pays the network fee, and the client has to fetch a recent blockhash itself, because the terms carry none. The standard x402 client refuses a payment above one dollar unless its owner raises that ceiling, which is why the price is not higher. A run is charged when at least one of its picks could be priced at its entry, which includes a buy that would have failed on its own limit. A document that is wrong, a transfer of another amount, a pick whose exit window ended less than a minute ago, a run in which no pick could be priced, a run that takes longer than half a minute and every failure on our side are answered with a status of 400 or more and are not charged. Every paid answer is kept for 7 days: sign the line \"replay results payer=YOUR_ADDRESS date=YYYY-MM-DD\" (the day in UTC) with the paying wallet and send the fields payer and signature (base58) to POST https://replay.loopholetape.com/v1/replay/results. Before paying, check a document for free at POST https://replay.loopholetape.com/v1/check, and replay its first pick for free at POST https://replay.loopholetape.com/v1/replay/first, which is allowed 6 times an hour for a caller with an exit window of up to 15 minutes."
+  "x-guidance": "Use this API to backtest past pump.fun picks against recorded trades with the bot's delay and price limits. Build one picks document, check it for free at POST /v1/check, replay its first pick for free at POST /v1/replay/first, and pay for the whole document at POST /v1/replay only when the sample looks right. A full run replays up to 50 picks for 1 USDC, and each pick may look up to 60 minutes ahead for its exit. Send the picks document as the JSON body of POST https://replay.loopholetape.com/v1/replay. Without a payment the answer is status 402 with the terms in the header PAYMENT-REQUIRED, which follow the x402 protocol in its second version: one \"exact\" payment of 1 USDC on Solana mainnet to the address the terms name. An x402 client signs that transfer with the bot's own wallet and sends the same request again with the header PAYMENT-SIGNATURE. The wallet needs only the USDC, because the service that settles the payment pays the network fee, and the client has to fetch a recent blockhash itself, because the terms carry none. The sample client limits each payment to 1 USDC unless you choose a different limit. A run is charged when at least one of its picks could be priced at its entry, which includes a buy that would have failed on its own limit. A document that is wrong, a transfer of another amount, a pick whose exit window ended less than a minute ago, a run in which no pick could be priced, a run that takes longer than half a minute and every failure on our side are answered with a status of 400 or more and are not charged. Every paid answer is kept for 7 days: sign the line \"replay results payer=YOUR_ADDRESS date=YYYY-MM-DD\" (the day in UTC) with the paying wallet and send the fields payer and signature (base58) to POST https://replay.loopholetape.com/v1/replay/results. Before paying, check a document for free at POST https://replay.loopholetape.com/v1/check, and replay its first pick for free at POST https://replay.loopholetape.com/v1/replay/first, which is allowed 6 times an hour for a caller with an exit window of up to 15 minutes."
  },
  "servers": [
   {
@@ -18,6 +18,16 @@
   }
  ],
  "paths": {
+  "/.json": {
+   "get": {
+    "operationId": "replayDetails",
+    "responses": {
+     "200": {
+      "description": "Read the price, limits, example and recovery address for the replay."
+     }
+    }
+   }
+  },
   "/v1/check": {
    "post": {
     "operationId": "checkPicks",
@@ -31,31 +41,82 @@
        "schema": {
         "$ref": "#/components/schemas/PicksDocument"
        },
-       "example": {
-        "settings": {
-         "delay_ms": 800,
-         "placement": "last",
-         "priority_fee": 12000,
-         "tip": 10000
-        },
-        "picks": [
-         {
-          "id": "moment-1",
-          "mint": "3ZDCDZeoX2yzRXdGJVtvRwhQCj1FGZCVuwuW1k6mpump",
-          "decision": {
-           "slot": 472217607,
-           "index": 158
+       "examples": {
+        "basicPick": {
+         "value": {
+          "settings": {
+           "delay_ms": 800,
+           "placement": "last",
+           "priority_fee": 12000,
+           "tip": 10000
           },
-          "stake_lamports": 100000000,
-          "slippage_bps": 1500,
-          "exit": {
-           "type": "threshold",
-           "up_bps": 3000,
-           "down_bps": 2000,
-           "max_seconds": 60
+          "picks": [
+           {
+            "id": "moment-1",
+            "mint": "BuKEom3vgDLJgyVs97jvD4Du6zTKLmxe7Q5mhJcQpump",
+            "decision": {
+             "slot": 472522196,
+             "index": 137
+            },
+            "stake_lamports": 100000000,
+            "slippage_bps": 1500,
+            "exit": {
+             "type": "threshold",
+             "up_bps": 3000,
+             "down_bps": 2000,
+             "max_seconds": 60
+            }
+           }
+          ]
+         }
+        },
+        "withLanding": {
+         "description": "In this example the chain recorded two transactions in the same second and one of them failed. The send times and the two missed orders are made up to show what a bot could supply. Two of four sends landed and the estimated delays run from one to two seconds with a middle value of 1.5 seconds. On the recorded trades the 0.1 SOL pick would have lost 0.002522473 SOL if both orders landed. With half of sends landing independently, the buy misses half the time and the buy fills but the sale misses a quarter of the time. The estimated change in cash is \u22120.02563061825 SOL, with a range of about \u22120.025647 to \u22120.012810 SOL from uncertainty in four sends. The open tokens are reported separately because the bot has received no SOL for them.",
+         "value": {
+          "settings": {
+           "delay_ms": 800,
+           "placement": "last",
+           "quiet_seconds": 60,
+           "priority_fee": 12000,
+           "tip": 10000
+          },
+          "picks": [
+           {
+            "id": "quiet-exit",
+            "mint": "Bapw65TbdzkudfMoPQnS9gdNUhjmNseWAr8L76iGpump",
+            "decision": 1795359229,
+            "stake_lamports": 100000000,
+            "slippage_bps": 200,
+            "exit": {
+             "type": "time",
+             "seconds": 120
+            }
+           }
+          ],
+          "landing": {
+           "send_log": [
+            {
+             "sent_at_ms": 1795356283000,
+             "landed": true,
+             "signature": "4KoAnmP1SDYe3XAz2M6UDAVvLenPBkzF2of3UDCqT6a4mUxdGg3KVz2gtt5HVUsvNBtGNJWcJFZNtcdy9b6LZAqG"
+            },
+            {
+             "sent_at_ms": 1795356284000,
+             "landed": true,
+             "signature": "5Dsk87Qz3xiEtfVgabpxiXKqjTS1vtfLzYBQZ7SvTTi1X35D5KcmX9w8wpNCewj84PrqG1pFD3Gz3bhTpBXKqWjD"
+            },
+            {
+             "sent_at_ms": 1795356284000,
+             "landed": false
+            },
+            {
+             "sent_at_ms": 1795356286000,
+             "landed": false
+            }
+           ]
           }
          }
-        ]
+        }
        }
       }
      }
@@ -97,31 +158,82 @@
        "schema": {
         "$ref": "#/components/schemas/PicksDocument"
        },
-       "example": {
-        "settings": {
-         "delay_ms": 800,
-         "placement": "last",
-         "priority_fee": 12000,
-         "tip": 10000
-        },
-        "picks": [
-         {
-          "id": "moment-1",
-          "mint": "3ZDCDZeoX2yzRXdGJVtvRwhQCj1FGZCVuwuW1k6mpump",
-          "decision": {
-           "slot": 472217607,
-           "index": 158
+       "examples": {
+        "basicPick": {
+         "value": {
+          "settings": {
+           "delay_ms": 800,
+           "placement": "last",
+           "priority_fee": 12000,
+           "tip": 10000
           },
-          "stake_lamports": 100000000,
-          "slippage_bps": 1500,
-          "exit": {
-           "type": "threshold",
-           "up_bps": 3000,
-           "down_bps": 2000,
-           "max_seconds": 60
+          "picks": [
+           {
+            "id": "moment-1",
+            "mint": "BuKEom3vgDLJgyVs97jvD4Du6zTKLmxe7Q5mhJcQpump",
+            "decision": {
+             "slot": 472522196,
+             "index": 137
+            },
+            "stake_lamports": 100000000,
+            "slippage_bps": 1500,
+            "exit": {
+             "type": "threshold",
+             "up_bps": 3000,
+             "down_bps": 2000,
+             "max_seconds": 60
+            }
+           }
+          ]
+         }
+        },
+        "withLanding": {
+         "description": "In this example the chain recorded two transactions in the same second and one of them failed. The send times and the two missed orders are made up to show what a bot could supply. Two of four sends landed and the estimated delays run from one to two seconds with a middle value of 1.5 seconds. On the recorded trades the 0.1 SOL pick would have lost 0.002522473 SOL if both orders landed. With half of sends landing independently, the buy misses half the time and the buy fills but the sale misses a quarter of the time. The estimated change in cash is \u22120.02563061825 SOL, with a range of about \u22120.025647 to \u22120.012810 SOL from uncertainty in four sends. The open tokens are reported separately because the bot has received no SOL for them.",
+         "value": {
+          "settings": {
+           "delay_ms": 800,
+           "placement": "last",
+           "quiet_seconds": 60,
+           "priority_fee": 12000,
+           "tip": 10000
+          },
+          "picks": [
+           {
+            "id": "quiet-exit",
+            "mint": "Bapw65TbdzkudfMoPQnS9gdNUhjmNseWAr8L76iGpump",
+            "decision": 1795359229,
+            "stake_lamports": 100000000,
+            "slippage_bps": 200,
+            "exit": {
+             "type": "time",
+             "seconds": 120
+            }
+           }
+          ],
+          "landing": {
+           "send_log": [
+            {
+             "sent_at_ms": 1795356283000,
+             "landed": true,
+             "signature": "4KoAnmP1SDYe3XAz2M6UDAVvLenPBkzF2of3UDCqT6a4mUxdGg3KVz2gtt5HVUsvNBtGNJWcJFZNtcdy9b6LZAqG"
+            },
+            {
+             "sent_at_ms": 1795356284000,
+             "landed": true,
+             "signature": "5Dsk87Qz3xiEtfVgabpxiXKqjTS1vtfLzYBQZ7SvTTi1X35D5KcmX9w8wpNCewj84PrqG1pFD3Gz3bhTpBXKqWjD"
+            },
+            {
+             "sent_at_ms": 1795356284000,
+             "landed": false
+            },
+            {
+             "sent_at_ms": 1795356286000,
+             "landed": false
+            }
+           ]
           }
          }
-        ]
+        }
        }
       }
      }
@@ -140,15 +252,95 @@
          "results": [
           {
            "id": "moment-1",
-           "status": "sold",
-           "net_sol": "-0.029588193",
-           "paper": {
-            "net_sol": "-0.020197576"
+           "mint": "BuKEom3vgDLJgyVs97jvD4Du6zTKLmxe7Q5mhJcQpump",
+           "stake_lamports": 100000000,
+           "decision": {
+            "slot": 472522196,
+            "after_index": 137,
+            "unix_ms": 1795346492000
            },
-           "exit_reason": "stop_loss"
+           "entry_landing": {
+            "slot": 472522198,
+            "after_index": "last",
+            "unix_ms": 1795346493000
+           },
+           "history_note": "The recording starts after launch, so the launch-stock check was skipped.",
+           "paper": {
+            "status": "take_profit",
+            "exit": {
+             "slot": 472522278,
+             "after_index": 13,
+             "unix_ms": 1795346510000
+            },
+            "entry_price": "0.0000709786615550652651971142",
+            "entry_venue": "curve",
+            "exit_venue": "curve",
+            "exit_price": "0.0000926421263689522957881705",
+            "net_sol": "0.0305210951281189046058500",
+            "stake_share": "0.305210951281189046058500"
+           },
+           "decision_price": "0.0000702031908927527936851109",
+           "landing_price": "0.0000703633895006551531526973",
+           "buy": {
+            "status": "filled",
+            "tokens": 1400363672321,
+            "curve": 98738764,
+            "protocol_fee": 938019,
+            "creator_fee": 296217,
+            "base_fee": 5000,
+            "priority_fee": 12000,
+            "tip": 10000,
+            "cash_lamports": -100000000,
+            "venue": "curve",
+            "budget": 99973000,
+            "min_tokens": 1193022504251,
+            "quoted_tokens": 1400363672321,
+            "cost_for_min_tokens": 85144606,
+            "price_after": "0.0000706556572167112097721012"
+           },
+           "entry_fill_price": "0.0000705093726377147060005235",
+           "exit_decision": {
+            "slot": 472522274,
+            "after_index": 4,
+            "unix_ms": 1795346509000
+           },
+           "exit_reason": "take_profit",
+           "exit_decision_price": "0.0000919353358273902494872889",
+           "exit_order_venue": "curve",
+           "min_sell_lamports": 107808437,
+           "exit_landing": {
+            "slot": 472522276,
+            "after_index": "last",
+            "unix_ms": 1795346509500
+           },
+           "exit_landing_price": "0.0000928445642433941825326322",
+           "activity": "trading",
+           "ms_since_real_trade": 500,
+           "quiet_seconds": 60,
+           "sell": {
+            "status": "filled",
+            "tokens": 1400363672321,
+            "curve": 129707676,
+            "protocol_fee": 1232223,
+            "creator_fee": 389124,
+            "base_fee": 5000,
+            "priority_fee": 12000,
+            "tip": 10000,
+            "cash_lamports": 128059329,
+            "venue": "curve",
+            "quoted_proceeds": 128086329,
+            "price_after": "0.0000924045184097645232363971",
+            "fill_price": "0.0000926242793666726926655793"
+           },
+           "status": "sold",
+           "tokens_held": 0,
+           "cash_lamports": 28059329,
+           "net_sol": "0.028059329",
+           "stake_share": "0.28059329",
+           "honest_minus_paper_sol": "-0.00246176612811890460585"
           }
          ],
-         "explanation": "One paragraph for each pick, in plain sentences."
+         "explanation": "For moment-1, the stake was 0.1 SOL. The recording starts after launch, so the launch-stock check was skipped. The buy landed after the recorded trades in slot 472522198, and the price for a billion token units went from 0.000070203 SOL at the decision to 0.000070363 SOL at landing. It bought 1,400,363,672,321 token units with 0.098738764 SOL on the curve, 0.000938019 SOL for the protocol and 0.000296217 SOL for the creator, and the transaction also cost 0.000005 SOL for the base fee, 0.000012 SOL for priority and 0.00001 SOL for the tip. The buy moved that price to 0.000070656 SOL. The bot decided to sell because the price reached the gain you asked for, and the sell landed after the recorded trades in slot 472522276. The curve paid 0.129707676 SOL before trading fees and 0.128086329 SOL after them. The protocol fee was 0.001232223 SOL and the creator fee was 0.000389124 SOL. The transaction cost 0.000005 SOL for the base fee, 0.000012 SOL for priority and 0.00001 SOL for the tip, and the sale moved the price for a billion token units from 0.000092845 to 0.000092405 SOL. The last real trade was 0.5 seconds earlier, so the coin counted as still trading with a 60-second cutoff. The result was 0.028059329 SOL, or 28.0593% of the stake. The same pick on paper showed 0.030521095 SOL using the last traded prices and paying no fees."
         }
        }
       }
@@ -210,31 +402,82 @@
        "schema": {
         "$ref": "#/components/schemas/PicksDocument"
        },
-       "example": {
-        "settings": {
-         "delay_ms": 800,
-         "placement": "last",
-         "priority_fee": 12000,
-         "tip": 10000
-        },
-        "picks": [
-         {
-          "id": "moment-1",
-          "mint": "3ZDCDZeoX2yzRXdGJVtvRwhQCj1FGZCVuwuW1k6mpump",
-          "decision": {
-           "slot": 472217607,
-           "index": 158
+       "examples": {
+        "basicPick": {
+         "value": {
+          "settings": {
+           "delay_ms": 800,
+           "placement": "last",
+           "priority_fee": 12000,
+           "tip": 10000
           },
-          "stake_lamports": 100000000,
-          "slippage_bps": 1500,
-          "exit": {
-           "type": "threshold",
-           "up_bps": 3000,
-           "down_bps": 2000,
-           "max_seconds": 60
+          "picks": [
+           {
+            "id": "moment-1",
+            "mint": "BuKEom3vgDLJgyVs97jvD4Du6zTKLmxe7Q5mhJcQpump",
+            "decision": {
+             "slot": 472522196,
+             "index": 137
+            },
+            "stake_lamports": 100000000,
+            "slippage_bps": 1500,
+            "exit": {
+             "type": "threshold",
+             "up_bps": 3000,
+             "down_bps": 2000,
+             "max_seconds": 60
+            }
+           }
+          ]
+         }
+        },
+        "withLanding": {
+         "description": "In this example the chain recorded two transactions in the same second and one of them failed. The send times and the two missed orders are made up to show what a bot could supply. Two of four sends landed and the estimated delays run from one to two seconds with a middle value of 1.5 seconds. On the recorded trades the 0.1 SOL pick would have lost 0.002522473 SOL if both orders landed. With half of sends landing independently, the buy misses half the time and the buy fills but the sale misses a quarter of the time. The estimated change in cash is \u22120.02563061825 SOL, with a range of about \u22120.025647 to \u22120.012810 SOL from uncertainty in four sends. The open tokens are reported separately because the bot has received no SOL for them.",
+         "value": {
+          "settings": {
+           "delay_ms": 800,
+           "placement": "last",
+           "quiet_seconds": 60,
+           "priority_fee": 12000,
+           "tip": 10000
+          },
+          "picks": [
+           {
+            "id": "quiet-exit",
+            "mint": "Bapw65TbdzkudfMoPQnS9gdNUhjmNseWAr8L76iGpump",
+            "decision": 1795359229,
+            "stake_lamports": 100000000,
+            "slippage_bps": 200,
+            "exit": {
+             "type": "time",
+             "seconds": 120
+            }
+           }
+          ],
+          "landing": {
+           "send_log": [
+            {
+             "sent_at_ms": 1795356283000,
+             "landed": true,
+             "signature": "4KoAnmP1SDYe3XAz2M6UDAVvLenPBkzF2of3UDCqT6a4mUxdGg3KVz2gtt5HVUsvNBtGNJWcJFZNtcdy9b6LZAqG"
+            },
+            {
+             "sent_at_ms": 1795356284000,
+             "landed": true,
+             "signature": "5Dsk87Qz3xiEtfVgabpxiXKqjTS1vtfLzYBQZ7SvTTi1X35D5KcmX9w8wpNCewj84PrqG1pFD3Gz3bhTpBXKqWjD"
+            },
+            {
+             "sent_at_ms": 1795356284000,
+             "landed": false
+            },
+            {
+             "sent_at_ms": 1795356286000,
+             "landed": false
+            }
+           ]
           }
          }
-        ]
+        }
        }
       }
      }
@@ -253,15 +496,95 @@
          "results": [
           {
            "id": "moment-1",
-           "status": "sold",
-           "net_sol": "-0.029588193",
-           "paper": {
-            "net_sol": "-0.020197576"
+           "mint": "BuKEom3vgDLJgyVs97jvD4Du6zTKLmxe7Q5mhJcQpump",
+           "stake_lamports": 100000000,
+           "decision": {
+            "slot": 472522196,
+            "after_index": 137,
+            "unix_ms": 1795346492000
            },
-           "exit_reason": "stop_loss"
+           "entry_landing": {
+            "slot": 472522198,
+            "after_index": "last",
+            "unix_ms": 1795346493000
+           },
+           "history_note": "The recording starts after launch, so the launch-stock check was skipped.",
+           "paper": {
+            "status": "take_profit",
+            "exit": {
+             "slot": 472522278,
+             "after_index": 13,
+             "unix_ms": 1795346510000
+            },
+            "entry_price": "0.0000709786615550652651971142",
+            "entry_venue": "curve",
+            "exit_venue": "curve",
+            "exit_price": "0.0000926421263689522957881705",
+            "net_sol": "0.0305210951281189046058500",
+            "stake_share": "0.305210951281189046058500"
+           },
+           "decision_price": "0.0000702031908927527936851109",
+           "landing_price": "0.0000703633895006551531526973",
+           "buy": {
+            "status": "filled",
+            "tokens": 1400363672321,
+            "curve": 98738764,
+            "protocol_fee": 938019,
+            "creator_fee": 296217,
+            "base_fee": 5000,
+            "priority_fee": 12000,
+            "tip": 10000,
+            "cash_lamports": -100000000,
+            "venue": "curve",
+            "budget": 99973000,
+            "min_tokens": 1193022504251,
+            "quoted_tokens": 1400363672321,
+            "cost_for_min_tokens": 85144606,
+            "price_after": "0.0000706556572167112097721012"
+           },
+           "entry_fill_price": "0.0000705093726377147060005235",
+           "exit_decision": {
+            "slot": 472522274,
+            "after_index": 4,
+            "unix_ms": 1795346509000
+           },
+           "exit_reason": "take_profit",
+           "exit_decision_price": "0.0000919353358273902494872889",
+           "exit_order_venue": "curve",
+           "min_sell_lamports": 107808437,
+           "exit_landing": {
+            "slot": 472522276,
+            "after_index": "last",
+            "unix_ms": 1795346509500
+           },
+           "exit_landing_price": "0.0000928445642433941825326322",
+           "activity": "trading",
+           "ms_since_real_trade": 500,
+           "quiet_seconds": 60,
+           "sell": {
+            "status": "filled",
+            "tokens": 1400363672321,
+            "curve": 129707676,
+            "protocol_fee": 1232223,
+            "creator_fee": 389124,
+            "base_fee": 5000,
+            "priority_fee": 12000,
+            "tip": 10000,
+            "cash_lamports": 128059329,
+            "venue": "curve",
+            "quoted_proceeds": 128086329,
+            "price_after": "0.0000924045184097645232363971",
+            "fill_price": "0.0000926242793666726926655793"
+           },
+           "status": "sold",
+           "tokens_held": 0,
+           "cash_lamports": 28059329,
+           "net_sol": "0.028059329",
+           "stake_share": "0.28059329",
+           "honest_minus_paper_sol": "-0.00246176612811890460585"
           }
          ],
-         "explanation": "One paragraph for each pick, in plain sentences."
+         "explanation": "For moment-1, the stake was 0.1 SOL. The recording starts after launch, so the launch-stock check was skipped. The buy landed after the recorded trades in slot 472522198, and the price for a billion token units went from 0.000070203 SOL at the decision to 0.000070363 SOL at landing. It bought 1,400,363,672,321 token units with 0.098738764 SOL on the curve, 0.000938019 SOL for the protocol and 0.000296217 SOL for the creator, and the transaction also cost 0.000005 SOL for the base fee, 0.000012 SOL for priority and 0.00001 SOL for the tip. The buy moved that price to 0.000070656 SOL. The bot decided to sell because the price reached the gain you asked for, and the sell landed after the recorded trades in slot 472522276. The curve paid 0.129707676 SOL before trading fees and 0.128086329 SOL after them. The protocol fee was 0.001232223 SOL and the creator fee was 0.000389124 SOL. The transaction cost 0.000005 SOL for the base fee, 0.000012 SOL for priority and 0.00001 SOL for the tip, and the sale moved the price for a billion token units from 0.000092845 to 0.000092405 SOL. The last real trade was 0.5 seconds earlier, so the coin counted as still trading with a 60-second cutoff. The result was 0.028059329 SOL, or 28.0593% of the stake. The same pick on paper showed 0.030521095 SOL using the last traded prices and paying no fees."
         }
        }
       }
@@ -317,7 +640,7 @@
     "operationId": "fetchPaidAnswers",
     "security": [],
     "summary": "Fetch the stored answers of a paying wallet",
-    "description": "For a buyer whose answer did not arrive. Sign the line \"replay results payer=YOUR_ADDRESS date=YYYY-MM-DD\", where the date is the day in UTC, with the wallet that paid, and send its address and the signature in base58. Answers are kept for 7 days.",
+    "description": "For a buyer whose answer did not arrive. Sign the line \"replay results payer=YOUR_ADDRESS date=YYYY-MM-DD\", where the date is the day in UTC, with the wallet that paid, and send its address and the signature in base58. Answers are kept for 7 days. Each page checks up to five orders, and you can send next_cursor as cursor with the same signature to read the next page.",
     "requestBody": {
      "required": true,
      "content": {
@@ -330,6 +653,10 @@
         ],
         "additionalProperties": false,
         "properties": {
+         "cursor": {
+          "type": "string",
+          "description": "Use the next_cursor from the preceding page."
+         },
          "payer": {
           "type": "string",
           "description": "The Solana address of the wallet that paid, in base58."
@@ -345,11 +672,64 @@
     },
     "responses": {
      "200": {
-      "description": "The stored answers.",
+      "description": "The stored answers and any orders that still need a check.",
       "content": {
        "application/json": {
         "schema": {
-         "type": "object"
+         "type": "object",
+         "required": [
+          "ok",
+          "runs",
+          "pending",
+          "needs_review",
+          "next_cursor",
+          "message"
+         ],
+         "properties": {
+          "ok": {
+           "const": true
+          },
+          "message": {
+           "type": "string"
+          },
+          "pending": {
+           "type": "integer",
+           "minimum": 0,
+           "description": "This many orders on the page are still being checked."
+          },
+          "needs_review": {
+           "type": "integer",
+           "minimum": 0,
+           "description": "This many orders on the page need help before another payment."
+          },
+          "next_cursor": {
+           "type": [
+            "string",
+            "null"
+           ],
+           "description": "A null value means this is the last page."
+          },
+          "runs": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "properties": {
+             "paid_at": {
+              "type": "number"
+             },
+             "transaction": {
+              "type": [
+               "string",
+               "null"
+              ]
+             },
+             "answer": {
+              "$ref": "#/components/schemas/Replay"
+             }
+            }
+           }
+          }
+         }
         }
        }
       }
@@ -407,6 +787,88 @@
      "picks"
     ],
     "properties": {
+     "landing": {
+      "description": "Orders that never land are outside the replay unless your bot gives its own landing data. Add a landing field beside picks with {\"rate\": 0.5, \"sample_size\": 4} if two of four sends landed, or give send_log with one to 256 rows. Each row gives sent_at_ms as a Unix time in milliseconds and landed as true or false. Include the transaction signature if you have it, and count a signed order once. A trade that reached the chain and failed still counts as landed. For a landed send you can give landed_at_ms from the bot\u2019s clock, or the replay can look up the signature and use the block time recorded in whole seconds. Lookups use the run\u2019s usual allowance for reading history, so a run that reaches its limit gives delays only for the sends it could time. Sends without usable times still count toward the rate, and the delay figures say how many sends could be timed. The free check validates the fields and the free first pick uses the sample. The replay uses the chosen delay for pricing and estimates each send\u2019s chance of landing from the same sample. A missed buy costs nothing and a missed sale leaves the tokens open. If a sale at a price target misses before the pick\u2019s time limit, the replay tries once more at that limit and counts the proceeds only if that sale fills. Each pick gives its estimated cash change and open tokens in expected, and the run gives expected_net_sol and net_sol_range in summary. The range shows how the cash estimate changes across a 95 percent interval for the landing rate, so a small sample can give a wide range.",
+      "oneOf": [
+       {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+         "rate",
+         "sample_size"
+        ],
+        "properties": {
+         "rate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+         },
+         "sample_size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+         }
+        }
+       },
+       {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+         "send_log"
+        ],
+        "properties": {
+         "send_log": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "items": {
+           "type": "object",
+           "additionalProperties": false,
+           "required": [
+            "sent_at_ms",
+            "landed"
+           ],
+           "properties": {
+            "sent_at_ms": {
+             "type": "integer",
+             "minimum": 0,
+             "maximum": 253402300799999
+            },
+            "landed_at_ms": {
+             "type": "integer",
+             "minimum": 0,
+             "maximum": 253402300799999
+            },
+            "landed": {
+             "type": "boolean"
+            },
+            "signature": {
+             "type": [
+              "string",
+              "null"
+             ],
+             "pattern": "^[1-9A-HJ-NP-Za-km-z]{64,88}$"
+            }
+           },
+           "if": {
+            "required": [
+             "landed_at_ms"
+            ]
+           },
+           "then": {
+            "properties": {
+             "landed": {
+              "const": true
+             }
+            }
+           },
+           "description": "Each signature must decode to 64 bytes and occur only once, and a landing time must fall at or after the send time."
+          }
+         }
+        }
+       }
+      ]
+     },
      "settings": {
       "type": "object",
       "additionalProperties": false,
@@ -604,6 +1066,118 @@
        "$ref": "#/components/schemas/ReplayResult"
       }
      },
+     "landing": {
+      "type": "object",
+      "description": "The shares come from the sample supplied by the bot, and delay_ms describes the landed sends with usable times.",
+      "properties": {
+       "source": {
+        "const": "given_by_bot"
+       },
+       "sample_size": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "landed_sends": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "never_landed_sends": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "landed_share": {
+        "type": "string"
+       },
+       "never_landed_share": {
+        "type": "string"
+       },
+       "delay_ms": {
+        "type": [
+         "object",
+         "null"
+        ],
+        "properties": {
+         "source": {
+          "const": "estimated"
+         },
+         "sample_size": {
+          "type": "integer",
+          "minimum": 0
+         },
+         "missing": {
+          "type": "integer",
+          "minimum": 0
+         },
+         "chain_block_times": {
+          "type": "integer",
+          "minimum": 0
+         },
+         "bot_landing_times": {
+          "type": "integer",
+          "minimum": 0
+         },
+         "minimum": {
+          "type": [
+           "number",
+           "null"
+          ],
+          "minimum": 0
+         },
+         "median": {
+          "type": [
+           "number",
+           "null"
+          ],
+          "minimum": 0
+         },
+         "maximum": {
+          "type": [
+           "number",
+           "null"
+          ],
+          "minimum": 0
+         }
+        }
+       }
+      }
+     },
+     "summary": {
+      "type": "object",
+      "description": "The run estimates expected_net_sol as the change in cash and net_sol_range from a 95 percent interval for the landing rate. Both are null if any entry lacks a price.",
+      "properties": {
+       "source": {
+        "const": "estimated"
+       },
+       "expected_net_sol": {
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "net_sol_range": {
+        "type": [
+         "array",
+         "null"
+        ],
+        "items": {
+         "type": "string"
+        }
+       },
+       "landing_rate_range": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        }
+       },
+       "unpriced_picks": {
+        "type": "integer"
+       }
+      }
+     },
+     "sources": {
+      "type": "string",
+      "description": "This explains which figures come from the bot or the chain and which are estimates."
+     },
      "explanation": {
       "type": "string",
       "description": "The same in plain sentences, one paragraph for each pick."
@@ -761,6 +1335,74 @@
      "honest_minus_paper_sol": {
       "type": "string",
       "description": "The replayed result minus the paper result, in SOL."
+     },
+     "source": {
+      "const": "estimated"
+     },
+     "expected": {
+      "type": "object",
+      "description": "The estimate gives the change in cash, the chance of still holding tokens and the average token units still held. If an early sale misses before the time limit, the answer also gives the later exit.",
+      "properties": {
+       "source": {
+        "const": "estimated"
+       },
+       "net_sol": {
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "open_position_share": {
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "tokens_held": {
+        "type": "string"
+       },
+       "exit_after_missed_sell": {
+        "type": "object",
+        "properties": {
+         "status": {
+          "type": "string"
+         },
+         "exit_decision": {
+          "type": "object",
+          "description": "A place in the chain's order of events.",
+          "properties": {
+           "slot": {
+            "type": "integer"
+           },
+           "after_index": {
+            "description": "The position in the slot, or the word last."
+           },
+           "unix_ms": {
+            "type": "integer"
+           }
+          }
+         },
+         "exit_landing": {
+          "type": "object",
+          "description": "A place in the chain's order of events.",
+          "properties": {
+           "slot": {
+            "type": "integer"
+           },
+           "after_index": {
+            "description": "The position in the slot, or the word last."
+           },
+           "unix_ms": {
+            "type": "integer"
+           }
+          }
+         },
+         "sell": {
+          "$ref": "#/components/schemas/Fill"
+         }
+        }
+       }
+      }
      },
      "history_note": {
       "type": "string",
