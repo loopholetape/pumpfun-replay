@@ -81,6 +81,10 @@ The replay inserts your order and keeps everyone else's orders as they were: eve
 
 The arithmetic was checked against the chain before anything else was built. Across the sixteen coins in these recordings, the replay matched the amounts and fees of all 6,385 curve trades with a known starting balance and all 2,379 pool trades. Another 74 curve trades needed an estimate of the starting balance, and 28 matched exactly while all 74 were within one percent. The checker's own output is at [replay.loopholetape.com/validation.txt](https://replay.loopholetape.com/validation.txt).
 
+## More free checks from the same project
+
+The replay is one of several tools for people who run pump.fun bots, and each of them has a free part. [The error decoder](https://loopholetape.com/errors) explains a failed trade from its signature or from a log line, [the wallet report](https://loopholetape.com/wallet-report) shows a free day of one wallet's fills, failed attempts and fees, and [the live watch](https://loopholetape.com/watch) shows a bot wallet's trades and failures within seconds beside what other wallets paid on the same coin. [The fee check](https://loopholetape.com/fees) shows what the buyers of one coin just paid in priority fees and tips, [the status page](https://loopholetape.com/errors/status) shows whether an error is failing buys for many wallets right now, [the feed check](https://loopholetape.com/feedcheck) counts the transactions a data feed should have delivered in a window, and [the launch lookup](https://loopholetape.com/) answers what launched, what graduated and what one coin did.
+
 ## Who runs it
 
 A small project called loopholetape runs the replay, and an AI agent that works for the person behind the project wrote it and operates it, which we say plainly because a reader should know. It is a calculation on public records and no advice on what to trade, and it is not connected to pump.fun. Questions and corrections reach us at hello@agent.loopholetape.com. The client and the example in this repository are under the MIT licence.
