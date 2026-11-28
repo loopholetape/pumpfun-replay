@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """replay_client.py: a small client for the replay for pump.fun bots at https://replay.loopholetape.com/.
 
-It checks a picks document, replays its first pick for free, buys a full run and fetches a paid answer again. Only the
-last two touch a wallet. Buying a run pays over x402 (version 2, "exact" on Solana): the service answers a request that
+It compares a wallet’s latest eligible buy for free with "try WALLET", and "buy --wallet WALLET" downloads the
+wallet’s picks and buys their replay. Give --up and --down as percentages and --seconds as the time limit, or give
+--seconds alone for a fixed holding time. It also checks a picks file, samples its first buy and recovers paid runs.
+Any wallet that holds the USDC can pay, and that wallet signs to fetch the answer again. To buy over x402,
+the service answers a request that
 carries no payment with status 402 and its terms, this script signs one USDC transfer for exactly the price the terms
 name, and sends the request again with that signed transfer in a header. The service that settles the payment pays the
 network fee, so the wallet needs USDC and no SOL.
@@ -12,10 +15,12 @@ one line of text), and never writes the key anywhere or sends it to anyone. It t
 service and a Solana RPC node, which it asks for a recent blockhash. Read it before you give it a key, as you should
 with any script that asks for one, and use a wallet that holds little.
 
+  python replay_client.py try     WALLET [--up 30 --down 20 --seconds 60]
+  python replay_client.py buy     --wallet WALLET --keypair your-keypair.json
   python replay_client.py check   picks.json
   python replay_client.py sample  picks.json
-  python replay_client.py buy     picks.json --keypair ~/bot-wallet.json [--max-usdc 1] [--rpc URL] [--out answer.json]
-  python replay_client.py results --keypair ~/bot-wallet.json
+  python replay_client.py buy     picks.json --keypair your-keypair.json [--max-usdc 1] [--rpc URL] [--out answer.json]
+  python replay_client.py results --keypair your-keypair.json
 
 It needs Python 3.9 or newer and one package: pip install solders
 """
@@ -25,11 +30,13 @@ from pathlib import Path
 import base64
 import json
 import os
+import re
 import struct
 import sys
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import urlencode
 
 SERVICE = 'https://replay.loopholetape.com/'
 PAY_TO = '9HkwyUhDMyjbpSpnyu5xuZ9vRaFQeajnJsavhie7XcsT'          # the address the service is paid at; a run is never paid to another one unless you say so
@@ -53,13 +60,17 @@ def spending_limit(value):
     raise argparse.ArgumentTypeError("Give a finite spending limit of zero or more USDC.")
 
 
-def post(url, body, headers=None, timeout=120):
-    req = urllib.request.Request(url, data=body, headers=dict({'Content-Type': 'application/json', 'User-Agent': 'replay-client/0.1'}, **(headers or {})))
+def fetch(req, timeout=120):
     try:
         with urllib.request.build_opener(NoRedirect()).open(req, timeout=timeout) as r:
             return r.status, dict(r.headers), r.read()
     except urllib.error.HTTPError as e:
         return e.code, dict(e.headers), e.read()
+
+
+def post(url, body, headers=None, timeout=120):
+    headers = {'Content-Type': 'application/json', 'User-Agent': 'replay-client/0.1', **(headers or {})}
+    return fetch(urllib.request.Request(url, data=body, headers=headers), timeout)
 
 
 def header(headers, name):
@@ -136,8 +147,13 @@ def show(out):
 
 def main():
     ap = argparse.ArgumentParser(description='Client for the replay for pump.fun bots.')
-    ap.add_argument('command', choices=['check', 'sample', 'buy', 'results'])
-    ap.add_argument('picks', nargs='?', help='the picks document, a JSON file')
+    ap.add_argument('command', choices=['try', 'check', 'sample', 'buy', 'results'])
+    ap.add_argument('picks', nargs='?', help='a wallet address for try or a JSON picks file for check, sample or buy')
+    ap.add_argument('--wallet', help='buy the picks from this public wallet address')
+    ap.add_argument('--up', help='sell after this percentage rise')
+    ap.add_argument('--down', help='sell after this percentage fall')
+    ap.add_argument('--seconds', type=int, help='sell after this many seconds, or earlier if a percentage is reached')
+    ap.add_argument('--delay-ms', type=int, help='allow this many milliseconds for the entry order to land')
     ap.add_argument('--keypair', help='the wallet that pays: a Solana keypair file (a JSON list of 64 numbers)')
     ap.add_argument('--max-usdc', type=spending_limit, default=Decimal(1), help='never sign a payment above this (default 1)')
     ap.add_argument('--service', default=SERVICE)
@@ -146,6 +162,36 @@ def main():
     ap.add_argument('--out', help='write the full answer to this file')
     a = ap.parse_args()
     base = a.service.rstrip('/') + '/'
+
+    wallet = a.picks if a.command == 'try' else a.wallet
+    if a.wallet and (a.command != 'buy' or a.picks):
+        ap.error('Use buy with either a picks file or --wallet.')
+    if a.command == 'try' and not wallet:
+        ap.error('Give the public wallet address after try.')
+    options = {}
+    if a.up is not None or a.down is not None:
+        rule = dict(type='threshold', up_bps=3000, down_bps=2000, max_seconds=60 if a.seconds is None else a.seconds)
+        for key, value in (('up_bps', a.up), ('down_bps', a.down)):
+            if value is not None:
+                if not re.fullmatch(r'(?:[0-9]{1,17}(?:\.[0-9]{0,2})?|\.[0-9]{1,2})', value):
+                    ap.error('Give each percentage as a number with up to two decimal places.')
+                rule[key] = int(Decimal(value) * 100)
+        options['exit'] = rule
+    elif a.seconds is not None:
+        options['exit'] = dict(type='time', seconds=a.seconds)
+    if a.delay_ms is not None:
+        options['delay_ms'] = a.delay_ms
+    if options and not wallet:
+        ap.error('Use the exit and delay options with a wallet address.')
+    if a.command == 'try':
+        st, _, raw = post(base + 'v1/try', json.dumps(dict(wallet=wallet, **options)).encode())
+        out = said(raw)
+        if st != 200 or not out.get('comparison'):
+            sys.exit(out.get('message') or 'The service could not compare this wallet.')
+        print(out['comparison']['message'])
+        if a.out:
+            Path(a.out).write_bytes(raw)
+        return
 
     if a.command == 'results':
         if not a.keypair:
@@ -177,9 +223,20 @@ def main():
             Path(a.out).write_text(json.dumps(out, indent=1))
         return
 
-    if not a.picks:
-        sys.exit('%s needs a picks document.' % a.command)
-    body = Path(a.picks).read_bytes()
+    if wallet:
+        if not a.keypair:
+            ap.error('The buy command needs the keypair of the paying wallet.')
+        query = dict(wallet=wallet, **options)
+        if 'exit' in query:
+            query['exit'] = json.dumps(query['exit'], separators=(',', ':'))
+        st, _, body = fetch(urllib.request.Request(base + 'try/document.json?' + urlencode(query),
+                                                  headers={'User-Agent': 'replay-client/0.1'}))
+        if st != 200 or not said(body).get('picks'):
+            sys.exit(said(body).get('message') or 'The service could not supply a picks document.')
+    elif a.picks:
+        body = Path(a.picks).read_bytes()
+    else:
+        ap.error('%s needs a picks document.' % a.command)
     if a.command in ('check', 'sample'):
         st, _, raw = post(base + ('v1/check' if a.command == 'check' else 'v1/replay/first'), body)
         out = said(raw)

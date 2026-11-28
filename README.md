@@ -4,7 +4,22 @@ A bot that trades new coins on pump.fun can win on paper and lose with real mone
 
 This repository holds a small client for it, an example and the description of its routes. The service itself runs at the address above, and its engine is not in this repository.
 
-## Try it without a wallet
+## Start with your bot's wallet
+
+The quickest way in needs nothing but the address of the wallet your bot trades from. The replay takes the wallet's latest pump.fun buy that it can price, shows that it reproduces the tokens the wallet really got, and works out what the same buy would have brought with a fixed exit, beside what the wallet really ended with. It is free, the address is public and nothing is signed, and [the page](https://replay.loopholetape.com/) does the same in a browser, where [a recorded wallet's comparison](https://replay.loopholetape.com/try/example) shows what an answer looks like.
+
+```
+python replay_client.py try YOUR_WALLET
+python replay_client.py try YOUR_WALLET --up 50 --down 10 --seconds 30
+```
+
+The answer also holds the wallet's last buys, up to fifty of them, as a picks document, and one line buys the full run over all of them for 1 USDC, paid from any wallet that holds that much USDC.
+
+```
+python replay_client.py buy --wallet YOUR_WALLET --keypair your-keypair.json
+```
+
+## Try it with a picks document
 
 You can check a document for free and replay its first pick for free when it fits the sample limits.
 
@@ -55,7 +70,7 @@ A pick names the coin by its mint address, the moment the bot decided, the SOL i
 
 ## A full run
 
-A full run replays up to 50 picks for 1 USDC, and each pick may look up to 60 minutes ahead for its exit. It is paid by the bot's own wallet over [x402](https://www.x402.org/) with USDC on Solana: the service answers a request that carries no payment with status 402 and its terms, a client signs one transfer for exactly that amount and sends the request again. The wallet needs only the USDC, because the service that settles the payment pays the network fee.
+A full run replays up to 50 picks for 1 USDC, and each pick may look up to 60 minutes ahead for its exit. It is paid by any wallet that holds the USDC over [x402](https://www.x402.org/) with USDC on Solana: the service answers a request that carries no payment with status 402 and its terms, a client signs one transfer for exactly that amount and sends the request again. The paying wallet signs to fetch the answer again, and it needs only the USDC because the service that settles the payment pays the network fee.
 
 ```
 python replay_client.py buy my_picks.json --keypair wallet.json

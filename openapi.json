@@ -10,7 +10,7 @@
    "email": "hello@agent.loopholetape.com",
    "url": "https://replay.loopholetape.com/"
   },
-  "x-guidance": "Use this API to backtest past pump.fun picks against recorded trades with the bot's delay and price limits. Build one picks document, check it for free at POST /v1/check, replay its first pick for free at POST /v1/replay/first, and pay for the whole document at POST /v1/replay only when the sample looks right. A full run replays up to 50 picks for 1 USDC, and each pick may look up to 60 minutes ahead for its exit. Send the picks document as the JSON body of POST https://replay.loopholetape.com/v1/replay. Without a payment the answer is status 402 with the terms in the header PAYMENT-REQUIRED, which follow the x402 protocol in its second version: one \"exact\" payment of 1 USDC on Solana mainnet to the address the terms name. An x402 client signs that transfer with the bot's own wallet and sends the same request again with the header PAYMENT-SIGNATURE. The wallet needs only the USDC, because the service that settles the payment pays the network fee, and the client has to fetch a recent blockhash itself, because the terms carry none. The sample client at https://github.com/loopholetape/pumpfun-replay/blob/main/replay_client.py does all of this and limits each payment to 1 USDC unless you choose a different limit. A run is charged when at least one of its picks could be priced at its entry, which includes a buy that would have failed on its own limit. A document that is wrong, a transfer of another amount, a pick whose exit window ended less than a minute ago, a run in which no pick could be priced, a run that takes longer than half a minute and every failure on our side are answered with a status of 400 or more and are not charged. Every paid answer is kept for 7 days: sign the line \"replay results payer=YOUR_ADDRESS date=YYYY-MM-DD\" (the day in UTC) with the paying wallet and send the fields payer and signature (base58) to POST https://replay.loopholetape.com/v1/replay/results. Before paying, check a document for free at POST https://replay.loopholetape.com/v1/check, and replay its first pick for free at POST https://replay.loopholetape.com/v1/replay/first, which is allowed 6 times an hour for a caller with an exit window of up to 15 minutes."
+  "x-guidance": "Use this API to backtest past pump.fun picks against recorded trades with the bot's delay and price limits. Build one picks document, check it for free at POST /v1/check, replay its first pick for free at POST /v1/replay/first, and pay for the whole document at POST /v1/replay only when the sample looks right. The replay tries up to three buys from newest to oldest and shows the first entry it can price. The comparison gives the tokens and the gain or loss after fees under the recorded sale and the exit you choose, and wallet_totals adds the wallet\u2019s results for buys with matched sales. The answer identifies the buy it shows and explains each buy it skipped, and it includes the picks document for a full run. The wallet reading lasts five minutes and wallet_read_at gives its time in UTC. A try uses a free sample only when it reads the chain, and document_url downloads the picks alone without using a sample. The request below uses a recorded wallet, and the shortened answer shows its comparison. The stored answer at /try/example.json can be read without using a sample.\n\n```sh\ncurl --json '{\"wallet\": \"5oWPWVXKzPtDvi3iZUXaopQS9gCfv74Lm9V7czf6omLK\"}' https://replay.loopholetape.com/v1/try\n```\n\n```json\n{\n  \"ok\": true,\n  \"shown_pick\": \"buy-1\",\n  \"skipped\": [],\n  \"wallet_totals\": {\n    \"known_sales\": 35,\n    \"result_sol\": \"-0.146266054\"\n  },\n  \"wallet_read_at\": \"2026-11-24 06:49:07 UTC\",\n  \"evidence\": {\n    \"transactions\": 200,\n    \"filled_buys\": 38,\n    \"failed_buys\": 54\n  },\n  \"comparison\": {\n    \"coin\": \"2Uwx\\u2026pump\",\n    \"real_tokens\": 7367236356,\n    \"replay_tokens\": 7367236356,\n    \"difference_tokens\": 0,\n    \"real_spent_sol\": \"0.027924176\",\n    \"real_received_sol\": \"0.014351165\",\n    \"real_result_sol\": \"-0.013573011\",\n    \"replay_result_sol\": \"0.002444084\",\n    \"difference_sol\": \"0.016017095\",\n    \"exit_delay_ms\": 800,\n    \"replay_sold_after_seconds\": 60.0,\n    \"replay_exit_reason\": \"timeout\"\n  }\n}\n```\n\nA full run replays up to 50 picks for 1 USDC, and each pick may look up to 60 minutes ahead for its exit. Send the picks document as the JSON body of POST https://replay.loopholetape.com/v1/replay. Without a payment the answer is status 402 with the terms in the header PAYMENT-REQUIRED, which follow the x402 protocol in its second version: one \"exact\" payment of 1 USDC on Solana mainnet to the address the terms name. An x402 client signs that transfer with any wallet that holds the USDC and sends the same request again with the header PAYMENT-SIGNATURE. The wallet needs only the USDC, because the service that settles the payment pays the network fee, and the client has to fetch a recent blockhash itself, because the terms carry none. The sample client at https://github.com/loopholetape/pumpfun-replay/blob/main/replay_client.py does all of this and limits each payment to 1 USDC unless you choose a different limit. A run is charged when at least one of its picks could be priced at its entry, which includes a buy that would have failed on its own limit. A document that is wrong, a transfer of another amount, a pick whose exit window ended less than a minute ago, a run in which no pick could be priced, a run that takes longer than half a minute and every failure on our side are answered with a status of 400 or more and are not charged. Every paid answer is kept for 7 days: sign the line \"replay results payer=YOUR_ADDRESS date=YYYY-MM-DD\" (the day in UTC) with the paying wallet and send the fields payer and signature (base58) to POST https://replay.loopholetape.com/v1/replay/results. Before paying, check a document for free at POST https://replay.loopholetape.com/v1/check, and replay its first pick for free at POST https://replay.loopholetape.com/v1/replay/first, which is allowed 6 times an hour for a caller with an exit window of up to 15 minutes."
  },
  "servers": [
   {
@@ -24,6 +24,631 @@
     "responses": {
      "200": {
       "description": "Read the price, limits, example and recovery address for the replay."
+     }
+    }
+   }
+  },
+  "/v1/pay-example": {
+   "get": {
+    "operationId": "paymentExample",
+    "responses": {
+     "200": {
+      "description": "Read the sample request and both decoded payment headers."
+     }
+    }
+   }
+  },
+  "/v1/try": {
+   "post": {
+    "operationId": "tryFromWallet",
+    "security": [],
+    "summary": "Compare the newest eligible buy with its replay",
+    "description": "The replay tries up to three buys from newest to oldest and shows the first entry it can price. The comparison gives the tokens and the gain or loss after fees under the recorded sale and the exit you choose, and wallet_totals adds the wallet\u2019s results for buys with matched sales. The answer identifies the buy it shows and explains each buy it skipped, and it includes the picks document for a full run. The wallet reading lasts five minutes and wallet_read_at gives its time in UTC. A try uses a free sample only when it reads the chain, and document_url downloads the picks alone without using a sample.",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "wallet"
+        ],
+        "additionalProperties": false,
+        "properties": {
+         "wallet": {
+          "type": "string",
+          "pattern": "^[1-9A-HJ-NP-Za-km-z]{32,44}$",
+          "description": "Give the public Solana address of the bot wallet."
+         },
+         "delay_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000,
+          "default": 0,
+          "description": "Milliseconds from the bot's decision to the landing of its order, rounded up to whole slots."
+         },
+         "exit": {
+          "description": "The rule by which the bot sells: after a holding time, or at a rise or a fall with a time limit.",
+          "oneOf": [
+           {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+             "type",
+             "seconds"
+            ],
+            "properties": {
+             "type": {
+              "const": "time"
+             },
+             "seconds": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 900
+             }
+            }
+           },
+           {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+             "type",
+             "up_bps",
+             "down_bps",
+             "max_seconds"
+            ],
+            "properties": {
+             "type": {
+              "const": "threshold"
+             },
+             "up_bps": {
+              "type": "integer",
+              "minimum": 1
+             },
+             "down_bps": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10000
+             },
+             "max_seconds": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 900
+             }
+            }
+           }
+          ]
+         }
+        }
+       },
+       "example": {
+        "wallet": "5oWPWVXKzPtDvi3iZUXaopQS9gCfv74Lm9V7czf6omLK"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "The example shows part of the answer for the recorded wallet.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        },
+        "example": {
+         "ok": true,
+         "shown_pick": "buy-1",
+         "skipped": [],
+         "wallet_totals": {
+          "known_sales": 35,
+          "result_sol": "-0.146266054"
+         },
+         "wallet_read_at": "2026-11-24 06:49:07 UTC",
+         "evidence": {
+          "transactions": 200,
+          "filled_buys": 38,
+          "failed_buys": 54
+         },
+         "comparison": {
+          "coin": "2Uwx\u2026pump",
+          "real_tokens": 7367236356,
+          "replay_tokens": 7367236356,
+          "difference_tokens": 0,
+          "real_spent_sol": "0.027924176",
+          "real_received_sol": "0.014351165",
+          "real_result_sol": "-0.013573011",
+          "replay_result_sol": "0.002444084",
+          "difference_sol": "0.016017095",
+          "exit_delay_ms": 800,
+          "replay_sold_after_seconds": 60.0,
+          "replay_exit_reason": "timeout"
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "A refusal with the reason and a sentence that says what to change. Nothing is charged.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Refusal"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "A refusal with the reason and a sentence that says what to change. Nothing is charged.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Refusal"
+        }
+       }
+      }
+     },
+     "429": {
+      "description": "A refusal with the reason and a sentence that says what to change. Nothing is charged.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Refusal"
+        }
+       }
+      }
+     },
+     "502": {
+      "description": "A refusal with the reason and a sentence that says what to change. Nothing is charged.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Refusal"
+        }
+       }
+      }
+     },
+     "503": {
+      "description": "A refusal with the reason and a sentence that says what to change. Nothing is charged.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Refusal"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/try/document.json": {
+   "get": {
+    "operationId": "downloadWalletPicks",
+    "security": [],
+    "description": "Download up to fifty buys as picks.json without using a sample, and use the Wallet-Read-At header to see when the wallet was read. Each caller can fetch thirty fresh wallet readings an hour.",
+    "parameters": [
+     {
+      "name": "wallet",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "up",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "number"
+      }
+     },
+     {
+      "name": "down",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "number"
+      }
+     },
+     {
+      "name": "seconds",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "exit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "description": "Encode the exit rule as JSON."
+      }
+     },
+     {
+      "name": "delay_ms",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Save the document and send it as the body of a paid run.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": false,
+         "required": [
+          "picks"
+         ],
+         "if": {
+          "not": {
+           "required": [
+            "own_wallet"
+           ]
+          }
+         },
+         "then": {
+          "properties": {
+           "picks": {
+            "items": {
+             "properties": {
+              "decision": {
+               "properties": {
+                "index": {
+                 "type": "integer",
+                 "minimum": 0
+                }
+               }
+              }
+             }
+            }
+           }
+          }
+         },
+         "properties": {
+          "own_wallet": {
+           "type": "string",
+           "pattern": "^[1-9A-HJ-NP-Za-km-z]{32,44}$",
+           "description": "Give the Solana wallet whose later trades the replay replaces, which must decode to 32 bytes."
+          },
+          "landing": {
+           "description": "Orders that never land are outside the replay unless your bot gives its own landing data. Add a landing field beside picks with {\"rate\": 0.5, \"sample_size\": 4} if two of four sends landed, or give send_log with one to 256 rows. Each row gives sent_at_ms as a Unix time in milliseconds and landed as true or false. Include the transaction signature if you have it, and count a signed order once. A trade that reached the chain and failed still counts as landed. For a landed send you can give landed_at_ms from the bot\u2019s clock, or the replay can look up the signature and use the block time recorded in whole seconds. Lookups use the run\u2019s usual allowance for reading history, so a run that reaches its limit gives delays only for the sends it could time. Sends without usable times still count toward the rate, and the delay figures say how many sends could be timed. The free check validates the fields and the free first pick uses the sample. The replay uses the chosen delay for pricing and estimates each send\u2019s chance of landing from the same sample. A missed buy costs nothing and a missed sale leaves the tokens open. If a sale at a price target misses before the pick\u2019s time limit, the replay tries once more at that limit and counts the proceeds only if that sale fills. Each pick gives its estimated cash change and open tokens in expected, and the run gives expected_net_sol and net_sol_range in summary. The range shows how the cash estimate changes across a 95 percent interval for the landing rate, so a small sample can give a wide range.",
+           "oneOf": [
+            {
+             "type": "object",
+             "additionalProperties": false,
+             "required": [
+              "rate",
+              "sample_size"
+             ],
+             "properties": {
+              "rate": {
+               "type": "number",
+               "minimum": 0,
+               "maximum": 1
+              },
+              "sample_size": {
+               "type": "integer",
+               "minimum": 1,
+               "maximum": 9007199254740991
+              }
+             }
+            },
+            {
+             "type": "object",
+             "additionalProperties": false,
+             "required": [
+              "send_log"
+             ],
+             "properties": {
+              "send_log": {
+               "type": "array",
+               "minItems": 1,
+               "maxItems": 256,
+               "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                 "sent_at_ms",
+                 "landed"
+                ],
+                "properties": {
+                 "sent_at_ms": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 253402300799999
+                 },
+                 "landed_at_ms": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 253402300799999
+                 },
+                 "landed": {
+                  "type": "boolean"
+                 },
+                 "signature": {
+                  "type": [
+                   "string",
+                   "null"
+                  ],
+                  "pattern": "^[1-9A-HJ-NP-Za-km-z]{64,88}$"
+                 }
+                },
+                "if": {
+                 "required": [
+                  "landed_at_ms"
+                 ]
+                },
+                "then": {
+                 "properties": {
+                  "landed": {
+                   "const": true
+                  }
+                 }
+                },
+                "description": "Each signature must decode to 64 bytes and occur only once, and a landing time must fall at or after the send time."
+               }
+              }
+             }
+            }
+           ]
+          },
+          "settings": {
+           "type": "object",
+           "additionalProperties": false,
+           "description": "How the bot's own orders behave. Every field is optional and has the default given here.",
+           "properties": {
+            "delay_ms": {
+             "type": "integer",
+             "minimum": 0,
+             "maximum": 10000,
+             "default": 800,
+             "description": "Milliseconds from the bot's decision to the landing of its order, rounded up to whole slots."
+            },
+            "slot_ms": {
+             "type": "integer",
+             "minimum": 1,
+             "maximum": 10000,
+             "default": 400,
+             "description": "Length of one slot in milliseconds."
+            },
+            "placement": {
+             "type": "string",
+             "enum": [
+              "last",
+              "first",
+              "after_trigger"
+             ],
+             "default": "last",
+             "description": "Where in its landing slot the order sits: after the recorded transactions of the slot (last), or before them (first, after_trigger)."
+            },
+            "exit_delay_ms": {
+             "type": "integer",
+             "minimum": 0,
+             "maximum": 10000,
+             "description": "Each sale uses this delay in milliseconds, and it uses the entry delay when this field is absent."
+            },
+            "exit_placement": {
+             "type": "string",
+             "enum": [
+              "last",
+              "first",
+              "after_trigger"
+             ],
+             "description": "Each sale uses this placement, and it uses the entry placement when this field is absent."
+            },
+            "base_fee": {
+             "type": "integer",
+             "minimum": 0,
+             "default": 5000,
+             "description": "Network fee of one transaction in lamports."
+            },
+            "priority_fee": {
+             "type": "integer",
+             "minimum": 0,
+             "default": 0,
+             "description": "Priority fee of one transaction in lamports."
+            },
+            "tip": {
+             "type": "integer",
+             "minimum": 0,
+             "default": 0,
+             "description": "Tip paid with one transaction in lamports."
+            },
+            "quiet_seconds": {
+             "type": "integer",
+             "minimum": 1,
+             "maximum": 86400,
+             "default": 60,
+             "description": "Seconds without a real trade after which the replay treats a coin as no longer trading."
+            }
+           }
+          },
+          "picks": {
+           "type": "array",
+           "minItems": 1,
+           "maxItems": 50,
+           "description": "The picks to replay. Each one is replayed by itself, so two picks on the same coin do not feel each other.",
+           "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+             "id",
+             "mint",
+             "decision",
+             "stake_lamports",
+             "slippage_bps",
+             "exit"
+            ],
+            "properties": {
+             "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "description": "Your own name for the pick, different for each pick of a document."
+             },
+             "mint": {
+              "type": "string",
+              "minLength": 32,
+              "maxLength": 44,
+              "description": "The coin's mint address in base58."
+             },
+             "decision": {
+              "description": "The moment the bot decided. A whole number is a Unix time in seconds and means the start of that second. An object with slot and index means directly after the transaction at that position in the slot.",
+              "oneOf": [
+               {
+                "type": "integer",
+                "minimum": 0
+               },
+               {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                 "slot",
+                 "index"
+                ],
+                "properties": {
+                 "slot": {
+                  "type": "integer",
+                  "minimum": 0
+                 },
+                 "index": {
+                  "type": "integer",
+                  "minimum": -1,
+                  "description": "With own_wallet an index of minus one places the decision before the first transaction in the slot."
+                 }
+                }
+               }
+              ]
+             },
+             "stake_lamports": {
+              "type": "integer",
+              "minimum": 1000000,
+              "maximum": 100000000000,
+              "description": "What the bot puts in, with fees included, in lamports."
+             },
+             "slippage_bps": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10000,
+              "description": "The slippage the bot allows, in hundredths of a percent."
+             },
+             "exit": {
+              "description": "The rule by which the bot sells: after a holding time, or at a rise or a fall with a time limit.",
+              "oneOf": [
+               {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                 "type",
+                 "seconds"
+                ],
+                "properties": {
+                 "type": {
+                  "const": "time"
+                 },
+                 "seconds": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 3600
+                 }
+                }
+               },
+               {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                 "type",
+                 "up_bps",
+                 "down_bps",
+                 "max_seconds"
+                ],
+                "properties": {
+                 "type": {
+                  "const": "threshold"
+                 },
+                 "up_bps": {
+                  "type": "integer",
+                  "minimum": 1
+                 },
+                 "down_bps": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 10000
+                 },
+                 "max_seconds": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 3600
+                 }
+                }
+               }
+              ]
+             }
+            }
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "A refusal with the reason and a sentence that says what to change. Nothing is charged.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Refusal"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "A refusal with the reason and a sentence that says what to change. Nothing is charged.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Refusal"
+        }
+       }
+      }
+     },
+     "429": {
+      "description": "A refusal with the reason and a sentence that says what to change. Nothing is charged.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Refusal"
+        }
+       }
+      }
+     },
+     "502": {
+      "description": "A refusal with the reason and a sentence that says what to change. Nothing is charged.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Refusal"
+        }
+       }
+      }
+     },
+     "503": {
+      "description": "A refusal with the reason and a sentence that says what to change. Nothing is charged.",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Refusal"
+        }
+       }
+      }
      }
     }
    }
@@ -382,7 +1007,7 @@
    "post": {
     "operationId": "replayPicks",
     "summary": "Generate a replay of up to 50 picks",
-    "description": "Replays every pick of the document. The price is 1 USDC for a run, paid over x402 with USDC on Solana mainnet, and a run is charged when at least one pick could be priced at its entry. A request without a payment is answered with status 402 and the terms.",
+    "description": "Replays every pick of the document. The price is 1 USDC for a run, paid over x402 with USDC on Solana mainnet, and a run is charged when at least one pick could be priced at its entry. A request without a payment is answered with status 402 and the terms. Any wallet that holds the USDC can pay, and the paying wallet signs to fetch the answer again.",
     "x-payment-info": {
      "protocols": [
       {
@@ -786,7 +1411,37 @@
     "required": [
      "picks"
     ],
+    "if": {
+     "not": {
+      "required": [
+       "own_wallet"
+      ]
+     }
+    },
+    "then": {
+     "properties": {
+      "picks": {
+       "items": {
+        "properties": {
+         "decision": {
+          "properties": {
+           "index": {
+            "type": "integer",
+            "minimum": 0
+           }
+          }
+         }
+        }
+       }
+      }
+     }
+    },
     "properties": {
+     "own_wallet": {
+      "type": "string",
+      "pattern": "^[1-9A-HJ-NP-Za-km-z]{32,44}$",
+      "description": "Give the Solana wallet whose later trades the replay replaces, which must decode to 32 bytes."
+     },
      "landing": {
       "description": "Orders that never land are outside the replay unless your bot gives its own landing data. Add a landing field beside picks with {\"rate\": 0.5, \"sample_size\": 4} if two of four sends landed, or give send_log with one to 256 rows. Each row gives sent_at_ms as a Unix time in milliseconds and landed as true or false. Include the transaction signature if you have it, and count a signed order once. A trade that reached the chain and failed still counts as landed. For a landed send you can give landed_at_ms from the bot\u2019s clock, or the replay can look up the signature and use the block time recorded in whole seconds. Lookups use the run\u2019s usual allowance for reading history, so a run that reaches its limit gives delays only for the sends it could time. Sends without usable times still count toward the rate, and the delay figures say how many sends could be timed. The free check validates the fields and the free first pick uses the sample. The replay uses the chosen delay for pricing and estimates each send\u2019s chance of landing from the same sample. A missed buy costs nothing and a missed sale leaves the tokens open. If a sale at a price target misses before the pick\u2019s time limit, the replay tries once more at that limit and counts the proceeds only if that sale fills. Each pick gives its estimated cash change and open tokens in expected, and the run gives expected_net_sol and net_sol_range in summary. The range shows how the cash estimate changes across a 95 percent interval for the landing rate, so a small sample can give a wide range.",
       "oneOf": [
@@ -898,6 +1553,21 @@
         "default": "last",
         "description": "Where in its landing slot the order sits: after the recorded transactions of the slot (last), or before them (first, after_trigger)."
        },
+       "exit_delay_ms": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 10000,
+        "description": "Each sale uses this delay in milliseconds, and it uses the entry delay when this field is absent."
+       },
+       "exit_placement": {
+        "type": "string",
+        "enum": [
+         "last",
+         "first",
+         "after_trigger"
+        ],
+        "description": "Each sale uses this placement, and it uses the entry placement when this field is absent."
+       },
        "base_fee": {
         "type": "integer",
         "minimum": 0,
@@ -975,7 +1645,8 @@
             },
             "index": {
              "type": "integer",
-             "minimum": 0
+             "minimum": -1,
+             "description": "With own_wallet an index of minus one places the decision before the first transaction in the slot."
             }
            }
           }
